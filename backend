@@ -1,0 +1,381 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": 
+    "dev": "nodemon server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mongoose": "^8.5.1",
+    "nodemon": "^3.1.4",
+    "socket.io": "^4.7.5"
+  }
+}
+PORT=5000
+MONGO_URI=your_mongodb_connection
+const mongoose = require('mongoose');
+
+const connectDB = async () => {
+
+    try {
+
+        await mongoose.connect(process.env.MONGO_URI);
+
+        console.log("MongoDB Connected");
+
+    } catch (error) {
+
+        console.log(error.message);
+
+        process.exit(1);
+    }
+};
+const mongoose = require('mongoose');
+
+const expertSchema = new mongoose.Schema({
+
+    name: {
+        type: String,
+        required: true
+    },
+
+    category: {
+        type: String,
+        required: true
+    },
+
+    experience: {
+        type: Number,
+        required: true
+    },
+
+    rating: {
+        type: Number,
+        required: true
+    },
+
+    bio: {
+        type: String
+    },
+
+    availableSlots: [
+        {
+            date: String,
+            slots: [String]
+        }
+    ]
+
+});
+
+module.exports = mongoose.model("Expert", expertSchema);
+const mongoose = require('mongoose');
+
+const bookingSchema = new mongoose.Schema({
+
+    expertId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Expert',
+        required: true
+    },
+
+    name: {
+        type: String,
+        required: true
+    },
+
+    email: {
+        type: String,
+        required: true
+    },
+
+    phone: {
+        type: String,
+        required: true
+    },
+
+    date: {
+        type: String,
+        required: true
+    },
+
+    timeSlot: {
+        type: String,
+        required: true
+    },
+
+    notes: String,
+
+    status: {
+        type: String,
+        enum: ['Pending', 'Confirmed', 'Completed'],
+        default: 'Pending'
+    }
+
+}, { timestamps: true });
+
+bookingSchema.index(
+    {
+        expertId: 1,
+        date: 1,
+        timeSlot: 1
+    },
+    {
+        unique: true
+    }
+);
+
+module.exports = mongoose.model("Booking", bookingSchema);
+const Expert = require('../models/Expert');
+
+exports.getExperts = async (req, res) => {
+
+    try {
+
+        const page = parseInt(req.query.page) || 1;
+
+        const limit = 5;
+
+        const search = req.query.search || '';
+
+        const category = req.query.category || '';
+
+        const query = {};
+
+        if (search) {
+
+            query.name = {
+                $regex: search,
+                $options: 'i'
+            };
+        }
+
+        if (category) {
+
+            query.category = category;
+        }
+
+        const experts = await Expert.find(query)
+            .skip((page - 1) * limit)
+            .limit(limit);
+
+        res.json(experts);
+
+    } catch (error) {
+
+        res.status(500).json({
+            message: error.message
+        });
+    }
+};
+
+exports.getExpertById = async (req, res) => {
+
+    try {
+
+        const expert = await Expert.findById(req.params.id);
+
+        if (!expert) {
+
+            return res.status(404).json({
+                message: "Expert not found"
+            });
+        }
+
+        res.json(expert);
+
+    } catch (error) {
+
+        res.status(500).json({
+            message: error.message
+        });
+    }
+};
+const Booking = require('../models/Booking');
+
+exports.createBooking = async (req, res) => {
+
+    try {
+
+        const {
+            expertId,
+            name,
+            email,
+            phone,
+            date,
+            timeSlot
+        } = req.body;
+
+        if (
+            !expertId ||
+            !name ||
+            !email ||
+            !phone ||
+            !date ||
+            !timeSlot
+        ) {
+
+            return res.status(400).json({
+                message: "All required fields are mandatory"
+            });
+        }
+
+        const booking = await Booking.create(req.body);
+
+        global.io.emit("slotBooked", {
+            expertId,
+            date,
+            slot: timeSlot
+        });
+
+        res.status(201).json({
+            success: true,
+            message: "Booking Successful",
+            booking
+        });
+
+    } catch (error) {
+
+        if (error.code === 11000) {
+
+            return res.status(400).json({
+                message: "Slot already booked"
+            });
+        }
+
+        res.status(500).json({
+            message: error.message
+        });
+    }
+};
+
+exports.updateBookingStatus = async (req, res) => {
+
+    try {
+
+        const booking = await Booking.findByIdAndUpdate(
+
+            req.params.id,
+
+            {
+                status: req.body.status
+            },
+
+            {
+                new: true
+            }
+        );
+
+        res.json(booking);
+
+    } catch (error) {
+
+        res.status(500).json({
+            message: error.message
+        });
+    }
+};
+
+exports.getBookingsByEmail = async (req, res) => {
+
+    try {
+
+        const bookings = await Booking.find({
+            email: req.query.email
+        }).populate('expertId');
+
+        res.json(bookings);
+
+    } catch (error) {
+
+        res.status(500).json({
+            message: error.message
+        });
+    }
+};
+const express = require('express');
+
+const router = express.Router();
+
+const {
+    getExperts,
+    getExpertById
+} = require('../controllers/expertController');
+
+router.get('/', getExperts);
+
+router.get('/:id', getExpertById);
+
+module.exports = router;
+const express = require('express');
+
+const router = express.Router();
+
+const {
+    createBooking,
+    updateBookingStatus,
+    getBookingsByEmail
+} = require('../controllers/bookingController');
+
+router.post('/', createBooking);
+
+router.patch('/:id/status', updateBookingStatus);
+
+router.get('/', getBookingsByEmail);
+
+module.exports = router;
+require('dotenv').config();
+
+const express = require('express');
+
+const cors = require('cors');
+
+const http = require('http');
+
+const { Server } = require('socket.io');
+
+const connectDB = require('./config/db');
+
+const expertRoutes = require('./routes/expertRoutes');
+
+const bookingRoutes = require('./routes/bookingRoutes');
+
+const app = express();
+
+const server = http.createServer(app);
+
+const io = new Server(server, {
+    cors: {
+        origin: "*"
+    }
+});
+
+global.io = io;
+
+connectDB();
+
+app.use(cors());
+
+app.use(express.json());
+
+app.use('/experts', expertRoutes);
+
+app.use('/bookings', bookingRoutes);
+
+io.on('connection', (socket) => {
+
+    console.log('User Connected');
+});
+
+const PORT = process.env.PORT || 5000;
+
+server.listen(PORT, () => {
+
+    console.log(`Server Running On Port ${PORT}`);
+});
+
+
+module.exports = connectDB;
