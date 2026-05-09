@@ -1,0 +1,475 @@
+{
+  "name": "frontend",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "axios": "^1.7.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.24.1",
+    "react-scripts": "5.0.1",
+    "socket.io-client": "^4.7.5"
+  },
+  "scripts": {
+    "start": "react-scripts start"
+  }
+}
+import React from 'react';
+
+import ReactDOM from 'react-dom/client';
+
+import App from './App';
+
+import './App.css';
+
+const root = ReactDOM.createRoot(
+    document.getElementById('root')
+);
+
+root.render(
+    <App />
+);
+import {
+    BrowserRouter,
+    Routes,
+    Route
+} from 'react-router-dom';
+
+import Navbar from './components/Navbar';
+
+import Experts from './pages/Experts';
+
+import ExpertDetails from './pages/ExpertDetails';
+
+import MyBookings from './pages/MyBookings';
+
+function App() {
+
+    return (
+
+        <BrowserRouter>
+
+            <Navbar />
+
+            <Routes>
+
+                <Route path="/" element={<Experts />} />
+
+                <Route path="/expert/:id" element={<ExpertDetails />} />
+
+                <Route path="/bookings" element={<MyBookings />} />
+
+            </Routes>
+
+        </BrowserRouter>
+    );
+}
+
+export default App;
+import { Link } from 'react-router-dom';
+
+function Navbar() {
+
+    return (
+
+        <div className="navbar">
+
+            <Link to="/">Experts</Link>
+
+            <Link to="/bookings">My Bookings</Link>
+
+        </div>
+    );
+}
+
+export default Navbar;
+import { Link } from 'react-router-dom';
+
+function ExpertCard({ expert }) {
+
+    return (
+
+        <div className="card">
+
+            <h3>{expert.name}</h3>
+
+            <p>{expert.category}</p>
+
+            <p>{expert.experience} Years Experience</p>
+
+            <p>⭐ {expert.rating}</p>
+
+            <Link to={`/expert/${expert._id}`}>
+                View Details
+            </Link>
+
+        </div>
+    );
+}
+
+export default ExpertCard;
+import { useEffect, useState } from 'react';
+
+import axios from 'axios';
+
+import ExpertCard from '../components/ExpertCard';
+
+import Loader from '../components/Loader';
+
+function Experts() {
+
+    const [experts, setExperts] = useState([]);
+
+    const [loading, setLoading] = useState(true);
+
+    const [search, setSearch] = useState('');
+
+    const [category, setCategory] = useState('');
+
+    useEffect(() => {
+
+        fetchExperts();
+
+    }, [search, category]);
+
+    const fetchExperts = async () => {
+
+        try {
+
+            setLoading(true);
+
+            const res = await axios.get(
+                `http://localhost:5000/experts?search=${search}&category=${category}`
+            );
+
+            setExperts(res.data);
+
+            setLoading(false);
+
+        } catch (error) {
+
+            setLoading(false);
+        }
+    };
+
+    if (loading) return <Loader />;
+
+    return (
+
+        <div className="container">
+
+            <h2>Experts</h2>
+
+            <input
+                type="text"
+                placeholder="Search by name"
+                onChange={(e) => setSearch(e.target.value)}
+            />
+
+            <select
+                onChange={(e) => setCategory(e.target.value)}
+            >
+
+                <option value="">All</option>
+
+                <option value="Doctor">Doctor</option>
+
+                <option value="Lawyer">Lawyer</option>
+
+                <option value="Teacher">Teacher</option>
+
+            </select>
+
+            {
+                experts.map((expert) => (
+
+                    <ExpertCard
+                        key={expert._id}
+                        expert={expert}
+                    />
+                ))
+            }
+
+        </div>
+    );
+}
+
+export default Experts;
+import { useEffect, useState } from 'react';
+
+import axios from 'axios';
+
+import { useParams } from 'react-router-dom';
+
+import io from 'socket.io-client';
+
+const socket = io('http://localhost:5000');
+
+function ExpertDetails() {
+
+    const { id } = useParams();
+
+    const [expert, setExpert] = useState(null);
+
+    const [formData, setFormData] = useState({
+
+        name: '',
+        email: '',
+        phone: '',
+        date: '',
+        timeSlot: '',
+        notes: ''
+    });
+
+    useEffect(() => {
+
+        fetchExpert();
+
+        socket.on("slotBooked", () => {
+
+            fetchExpert();
+        });
+
+    }, []);
+
+    const fetchExpert = async () => {
+
+        const res = await axios.get(
+            `http://localhost:5000/experts/${id}`
+        );
+
+        setExpert(res.data);
+    };
+
+    const handleBooking = async () => {
+
+        if (
+            !formData.name ||
+            !formData.email ||
+            !formData.phone ||
+            !formData.date ||
+            !formData.timeSlot
+        ) {
+
+            return alert("Please fill all fields");
+        }
+
+        try {
+
+            await axios.post(
+                'http://localhost:5000/bookings',
+                {
+                    ...formData,
+                    expertId: id
+                }
+            );
+
+            alert('Booking Successful');
+
+        } catch (error) {
+
+            alert(error.response.data.message);
+        }
+    };
+
+    if (!expert) return <h2>Loading...</h2>;
+
+    return (
+
+        <div className="container">
+
+            <h2>{expert.name}</h2>
+
+            <p>{expert.bio}</p>
+
+            {
+                expert.availableSlots.map((item, index) => (
+
+                    <div key={index}>
+
+                        <h3>{item.date}</h3>
+
+                        {
+                            item.slots.map((slot, i) => (
+
+                                <button
+                                    key={i}
+                                    onClick={() =>
+                                        setFormData({
+                                            ...formData,
+                                            date: item.date,
+                                            timeSlot: slot
+                                        })
+                                    }
+                                >
+                                    {slot}
+                                </button>
+                            ))
+                        }
+
+                    </div>
+                ))
+            }
+
+            <input
+                placeholder="Name"
+                onChange={(e) =>
+                    setFormData({
+                        ...formData,
+                        name: e.target.value
+                    })
+                }
+            />
+
+            <input
+                placeholder="Email"
+                onChange={(e) =>
+                    setFormData({
+                        ...formData,
+                        email: e.target.value
+                    })
+                }
+            />
+
+            <input
+                placeholder="Phone"
+                onChange={(e) =>
+                    setFormData({
+                        ...formData,
+                        phone: e.target.value
+                    })
+                }
+            />
+
+            <textarea
+                placeholder="Notes"
+                onChange={(e) =>
+                    setFormData({
+                        ...formData,
+                        notes: e.target.value
+                    })
+                }
+            />
+
+            <button onClick={handleBooking}>
+                Book Slot
+            </button>
+
+        </div>
+    );
+}
+
+export default ExpertDetails;
+import { useState } from 'react';
+
+import axios from 'axios';
+
+function MyBookings() {
+
+    const [email, setEmail] = useState('');
+
+    const [bookings, setBookings] = useState([]);
+
+    const fetchBookings = async () => {
+
+        const res = await axios.get(
+            `http://localhost:5000/bookings?email=${email}`
+        );
+
+        setBookings(res.data);
+    };
+
+    return (
+
+        <div className="container">
+
+            <h2>My Bookings</h2>
+
+            <input
+                type="email"
+                placeholder="Enter Email"
+                onChange={(e) => setEmail(e.target.value)}
+            />
+
+            <button onClick={fetchBookings}>
+                Search
+            </button>
+
+            {
+                bookings.map((booking) => (
+
+                    <div
+                        className="card"
+                        key={booking._id}
+                    >
+
+                        <h3>{booking.expertId?.name}</h3>
+
+                        <p>Date: {booking.date}</p>
+
+                        <p>Slot: {booking.timeSlot}</p>
+
+                        <p>Status: {booking.status}</p>
+
+                    </div>
+                ))
+            }
+
+        </div>
+    );
+}
+
+export default MyBookings;
+body {
+    margin: 0;
+    font-family: Arial;
+    background: #f5f5f5;
+}
+
+.navbar {
+    background: black;
+    padding: 15px;
+}
+
+.navbar a {
+    color: white;
+    margin-right: 20px;
+    text-decoration: none;
+}
+
+.container {
+    padding: 20px;
+}
+
+.card {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    margin-top: 20px;
+}
+
+input,
+select,
+textarea,
+button {
+    display: block;
+    margin-top: 10px;
+    padding: 10px;
+    width: 300px;
+}
+
+button {
+    cursor: pointer;
+}
+BACKEND
+
+npm install express mongoose cors dotenv socket.io nodemon
+FRONTEND
+
+npm install axios react-router-dom socket.io-client
+BACKEND
+
+npm run dev
+FRONTEND
+
+npm start
